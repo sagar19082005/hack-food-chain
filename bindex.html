@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Climate & Supply AI Dashboard</title>
+    <link rel="stylesheet" href="bstyle.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo-area">
+                <img src="images/logoBg.png" alt="">
+                <div class="logo-text">GLOBAL CLIMATE <br><span>& SUPPLY AI</span></div>
+            </div>
+            <nav>
+                <div class="nav-link active"><i class="fas fa-th-large"></i> Dashboard</div>
+                <!-- <div class="nav-link"><i class="fas fa-globe"></i> Climate Data</div>
+                <div class="nav-link"><i class="fas fa-exchange-alt"></i> Supply Chain</div>
+                <div class="nav-link"><i class="fas fa-file-alt"></i> Reports</div>
+                <div class="nav-spacer"></div>
+                <div class="nav-link"><i class="fas fa-chart-line"></i> Compare</div>
+                <div class="nav-link"><i class="fas fa-cog"></i> Settings</div> -->
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <!-- <header class="status-header">
+                <div class="risk-gauge">~80%</div>
+                <div class="main-title">
+                    Food Supply Risk: <span class="risk-high">HIGH</span> <span class="red-dot"></span>
+                </div>
+                <div class="top-info">
+                    Region: Bengaluru, India | Prediction: Next 3–6 months | Last Updated: Oct 26, 2023
+                </div>
+                <div class="header-tools">
+                    <i class="far fa-bell"></i>
+                    <i class="far fa-user-circle"></i>
+                    <div class="mode-toggle"><i class="fas fa-sun"></i></div>
+                </div>
+            </header> -->
+            <header class="status-header">
+                <div class="risk-gauge">~80%</div>
+                <div class="main-title">
+                    Food Supply Risk: <span class="risk-high">HIGH</span> <span class="red-dot"></span>
+                </div>
+
+                <div class="search-container">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" class="location-search" placeholder="Search location..."
+                        value="Bengaluru, Karnataka">
+                </div>
+
+                <div class="top-info">
+                    Prediction: Next 3–6 months | Last Updated: Oct 26, 2023
+                </div>
+
+                <div class="header-tools">
+                    <i class="far fa-bell"></i>
+                    <i class="far fa-user-circle"></i>
+                    <div class="mode-toggle"><i class="fas fa-sun"></i></div>
+                </div>
+            </header>
+
+            <div class="dashboard-grid">
+
+                <div class="grid-label col-span-3">Key AI Action Plan</div>
+                <div class="ai-glow-card col-span-3">
+                    <div class="ai-inner">
+                        <div class="ai-header"><i class="fas fa-robot"></i> AI Recommended Strategy</div>
+                        <ul class="fas fa-robo">
+                            <li>Risk type : <span></span></li>
+                            <li>Severity Level : <span></span></li>
+                            <li>Timeframe : <span></span></li>
+                            <li>Recommended Action : <span></span></li>
+                            <li>Affected Resource : <span></span></li>
+                        </ul>
+                        <div class="confidence-footer">
+                            Prediction Confidence: <strong>82%</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-label col-span-3">Climate & Crop Factors <small>Current Status</small></div>
+                <div class="climate-container col-span-3">
+                    <div class="c-card">
+                        <div class="c-title">
+                            <h3>Drought</h3>
+                            <img src="images/drought-img.png" alt="drought">
+                        </div>
+                        <div class="chart-box">
+                            <ul>
+                                <li>Rainfall Deficit (%) : <span></span> </li>
+                                <li>Soil Moisture : <span></span> </li> 
+                                <li>Severity : <span></span> </li>
+                            </ul>
+                        </div>
+                        <p class="c-desc"><strong>Reason:</strong> Low rainfall detected in last 2 months</p>
+                        <button class="btn-show">Show More</button>
+                    </div>
+
+                    <div class="c-card active-card">
+                        <div class="c-title">
+                            <h3>Flood</h3>
+                            <img src="images/flood.png" alt="">
+                        </div>
+                        <div class="chart-box">
+                            <ul>
+                                <li>Rainfall Intensity: <span></span> </li>
+                                <li>Water Level Rise : <span></span> </li>
+                                <li>Risk Zones (areas affected): <span></span> </li>
+                            </ul>
+                        </div>
+                        <p class="c-desc"><strong>Reason:</strong> Increasing intense weather predicted</p>
+                        <button class="btn-dark">Show More</button>
+                    </div>
+
+                    <div class="c-card">
+                        <div class="c-title">
+                            <h3>Temp Rise</h3>
+                            <img src="images/temp.png" alt="">
+                        </div>
+                        <div class="chart-box">
+                            <ul>
+                                <li>Temperature Increase (+°C) : <span></span> </li>
+                                <li>Heatwave Duration : <span></span> </li>
+                                <li>Affected Regions : <span></span> </li>
+                            </ul>
+                        </div>
+                        <p class="c-desc"><strong>Reason:</strong> Global warming trend affecting regions</p>
+                        <button class="btn-show">Show More</button>
+                    </div>
+
+                    <div class="c-card">
+                        <div class="c-title">
+                            <h3>Crop Status</h3>
+                            <img src="images/crop.png" alt="">
+                        </div>
+                        <div class="chart-box">
+                            <ul>
+                                <li>Crop Health : <span></span> </li>
+                                <li>Growth Stage : <span></span> </li>
+                                <li>Yield Prediction (%) : <span></span> </li>
+                                <li>Stress Factor (water / temp) : <span></span> </li>
+                            </ul>
+                        </div>
+                        <p class="c-desc"><strong>Reason:</strong> Yields affected by water stress</p>
+                        <button class="btn-show">Show More</button>
+                    </div>
+                </div>
+
+                <div class="grid-label">Supply Chain</div>
+                <div class="grid-label">Crop Impact</div>
+                <div class="grid-label">World Map</div>
+
+                <div class="bottom-card">
+                    <div class="card-top">Logistics Status <span class="tag-orange">Delayed</span></div>
+                    <div>
+                        <img style="width: 300px;" src="images/ie.png" alt="">
+                    </div>
+                    <div class="viz-area">
+                        <ul class="c-desc">
+                            <li>Import: <span></span></li>
+                            <li>Export: <span></span>y</li>
+                            <li>Price: <span></span>y</li>
+                            <li>Supply Chain: <span></span></li>
+                        </ul>
+                    </div>
+                    <div class="card-footer">Port congestion and fuel delays</div>
+                </div>
+
+                <div class="bottom-card">
+                    <div class="impact-row">
+                        <div class="stat-pill">Rice <span>-10%</span></div>
+                        <div class="stat-pill">Wheat <span>+15%</span></div>
+                        <div class="stat-pill">Corn <span>-5%</span></div>
+                    </div>
+                    <div class="card-footer">Reason: Reduced irrigation affecting yield</div>
+                </div>
+
+                <div class="bottom-card map-card">
+                    <div class="map-header">World Risk Zone Analysis</div>
+                    <div class="map-placeholder">
+                        <div class="map-pin">High Risk: South India</div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+</body>
+<script src="script.js"></script>
+
+</html>
+
+</html>
