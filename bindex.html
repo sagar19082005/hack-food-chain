@@ -7,6 +7,7 @@
     <title>Global Climate & Supply AI Dashboard</title>
     <link rel="stylesheet" href="bstyle.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 
 <body>
@@ -50,8 +51,7 @@
 
                 <div class="search-container">
                     <i class="fas fa-search search-icon"></i>
-                    <input type="text" class="location-search" placeholder="Search location..."
-                        value="Bengaluru, Karnataka">
+                    <input type="text" class="location-search" placeholder="Search location...">
                 </div>
 
                 <div class="top-info">
@@ -184,7 +184,7 @@
                 <div class="bottom-card map-card">
                     <div class="map-header">World Risk Zone Analysis</div>
                     <div class="map-placeholder">
-                        <div class="map-pin">High Risk: South India</div>
+                        <div id="map" style="height:260px; border-radius:8px; overflow:hidden;"></div>
                     </div>
                 </div>
 
@@ -192,6 +192,7 @@
         </main>
     </div>
 </body>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="script.js"></script>
 
 </html>

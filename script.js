@@ -27,7 +27,8 @@ if (nextPage) {
     const placeHeading = null; // reserved - don't overwrite existing header markup
     // Prefer a dedicated description paragraph inside the AI card; create it at runtime if missing
     let descriptionEl = document.querySelector('.ai-inner .ai-description');
-    const attractionsList = document.querySelector('.action-list'); // attractions -> list
+    // Try multiple fallbacks for the attractions/action list to avoid missing selector errors
+    const attractionsList = document.querySelector('.action-list') || document.querySelector('.ai-inner ul.fas.fa-robo') || document.querySelector('.viz-area .c-desc') || null; // attractions -> list
     const bestTimeEl = document.querySelector('.top-info'); // best time -> top-info area
     // pick a card-footer element to hold 'food' info (use second .card-footer if present)
     const cardFooters = document.querySelectorAll('.card-footer');
@@ -36,6 +37,29 @@ if (nextPage) {
     // Helper: show simple messages in the description area
     function showMessage(msg) {
         if (descriptionEl) descriptionEl.innerText = msg;
+    }
+
+    // Track whether we've already warned about Gemini issues to avoid console spam
+    let _geminiErrorWarned = false;
+
+    // Leaflet map handle
+    let map = null;
+    let mapMarker = null;
+    function initMap(lat = 12.97, lon = 77.59) {
+        try {
+            if (!window.L) return;
+            if (!map) {
+                map = L.map('map').setView([lat, lon], 8);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap'
+                }).addTo(map);
+            } else {
+                map.setView([lat, lon], 8);
+            }
+            if (mapMarker) map.removeLayer(mapMarker);
+            mapMarker = L.marker([lat, lon]).addTo(map);
+        } catch (e) { console.warn('Leaflet map init failed', e); }
     }
 
     // Parse structured text returned by the model into sections
@@ -102,6 +126,55 @@ if (nextPage) {
             }
         }
         return out;
+    }
+
+    // Derive a simple supply risk score from sensor data when the model omits a numeric percent
+    function computeSupplyRisk({weather, nasa} = {}) {
+        try {
+            let totalPrecip = 0;
+            let days = 0;
+            let avgTemp = null;
+            if (nasa && nasa.properties && nasa.properties.parameter) {
+                const parameters = nasa.properties.parameter || {};
+                const prec = parameters.PRECTOT || {};
+                const t2m = parameters.T2M || {};
+                days = Object.keys(prec || {}).length;
+                totalPrecip = Object.values(prec || {}).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+                const temps = Object.values(t2m || {}).map(v => parseFloat(v) || 0).filter(v => !isNaN(v));
+                if (temps.length) avgTemp = temps.reduce((s, v) => s + v, 0) / temps.length;
+            }
+
+            // base score and adjustments (very conservative/simple heuristic)
+            let score = 30;
+            if (days) {
+                // less total precipitation increases risk (scale capped)
+                const precipPerDay = totalPrecip / Math.max(1, days);
+                const precipPenalty = Math.max(0, Math.min(40, Math.round((40 - precipPerDay) / 1)));
+                score += precipPenalty;
+            }
+            if (avgTemp !== null) {
+                if (avgTemp > 30) score += 12;
+                if (avgTemp > 35) score += 8;
+            }
+            // brief look at OpenWeather current condition if available
+            try {
+                if (weather && weather.current && weather.current.weather && weather.current.weather[0]) {
+                    const w = (weather.current.weather[0].main || '').toLowerCase();
+                    if (w.includes('rain') || w.includes('thunderstorm')) score += 6;
+                    if (w.includes('extreme') || w.includes('storm')) score += 8;
+                }
+            } catch (e) {}
+
+            score = Math.min(98, Math.max(5, Math.round(score)));
+            const level = score >= 70 ? 'High' : score >= 40 ? 'Medium' : 'Low';
+            const reasons = [];
+            if (days && totalPrecip < 60) reasons.push(`Low recent rainfall (${Math.round(totalPrecip)} mm)`);
+            if (avgTemp !== null && avgTemp > 30) reasons.push(`High avg temp (${Math.round(avgTemp)}°C)`);
+            if (!reasons.length) reasons.push('Derived from recent climate data');
+            return { level, pct: `${score}%`, reason: reasons.join('; ') };
+        } catch (e) {
+            return { level: 'Unknown', pct: 'N/A', reason: 'Insufficient sensor data' };
+        }
     }
 
     // Helper: render text into pointwise bullets inside a container
@@ -213,7 +286,7 @@ if (nextPage) {
             cCards.forEach(card => {
                 const titleEl = card.querySelector('.c-title h3');
                 const descEl = card.querySelector('.c-desc');
-                const chartBox = card.querySelector('.chart-box');
+                const chartBox = card.querySelector('.chart-box') || card.querySelector('.chat-box');
                 if (!titleEl || !descEl) return;
                 const key = titleEl.innerText.trim();
                 // normalize key -> match climateMap keys
@@ -248,7 +321,7 @@ if (nextPage) {
 
         function adjustLayout() {
             // Increase chart-box height and allow wrapping
-            const chartBoxes = document.querySelectorAll('.chart-box');
+            const chartBoxes = document.querySelectorAll('.chart-box, .chat-box');
             chartBoxes.forEach(cb => {
                 cb.style.whiteSpace = 'normal';
                 cb.style.wordBreak = 'break-word';
@@ -378,7 +451,7 @@ if (nextPage) {
 
     // Populate logistics viz spans in bottom-card (.viz-area .c-desc li span)
     function fillLogisticsSpans(sections) {
-        const viz = document.querySelector('.viz-area ul.c-desc');
+        const viz = document.querySelector('.viz-area ul.c-desc, .vix-box, .viz-area .vix-box');
         if (!viz) return;
         const spans = viz.querySelectorAll('li span');
         // Derive country from the search input and provide concise country-level info
@@ -477,13 +550,66 @@ if (nextPage) {
             body: JSON.stringify(body)
         });
 
+        // If the proxy returned a non-OK status, allow caller to fallback gracefully
         if (!res.ok) {
             const errText = await res.text().catch(() => '');
-            throw new Error(`API error ${res.status}: ${errText}`);
+            if (res.status === 404) {
+                if (!_geminiErrorWarned) console.warn(`Gemini proxy not available (404). Response: ${errText}`);
+                _geminiErrorWarned = true;
+                return '';
+            }
+            if (!_geminiErrorWarned) console.warn(`Gemini API error ${res.status}: ${errText}`);
+            _geminiErrorWarned = true;
+            return '';
         }
 
-        const data = await res.json();
-        return extractTextFromResponse(data);
+        const data = await res.json().catch(() => null);
+        // If server short-circuits with an error payload like { error: '...' }, treat as no-AI
+        if (data && data.error) {
+            if (!_geminiErrorWarned) console.warn('Gemini proxy response error:', data.error);
+            _geminiErrorWarned = true;
+            return '';
+        }
+
+        return extractTextFromResponse(data || {});
+    }
+
+    // Geocode a place via our server proxy (Nominatim)
+    async function geocodePlace(place) {
+        const res = await fetch(`/api/geocode?place=${encodeURIComponent(place)}`);
+        if (!res.ok) {
+            // return null so caller can continue; log for debugging
+            const txt = await res.text().catch(()=>'');
+            console.warn('Geocode returned non-OK:', res.status, txt);
+            return null;
+        }
+        return res.json();
+    }
+
+    // Fetch current weather via server proxy (OpenWeather)
+    async function getWeather(lat, lon) {
+        const res = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+        // Attempt to parse JSON even if response is not ok so server guidance is readable
+        const payload = await res.json().catch(async () => {
+            const txt = await res.text().catch(() => '');
+            return { error: txt || 'Failed to parse weather response' };
+        });
+        if (payload && payload.error) {
+            console.warn('OpenWeather proxy returned error:', payload);
+            // don't throw — return null so caller can continue with mock/other data
+            return null;
+        }
+        return payload;
+    }
+
+    // Fetch NASA POWER daily data for a date range via server proxy
+    async function getNasaPower(lat, lon, start, end) {
+        const res = await fetch(`/api/nasa-power?lat=${lat}&lon=${lon}&start=${start}&end=${end}`);
+        if (!res.ok) {
+            const txt = await res.text().catch(() => '');
+            throw new Error(`NASA POWER fetch failed: ${txt}`);
+        }
+        return res.json();
     }
 
     async function handleSearch() {
@@ -493,18 +619,173 @@ if (nextPage) {
             return;
         }
 
-        // Set heading to the place name
-        if (placeHeading) placeHeading.innerText = place;
+        // Show loading
+        showMessage('Loading location data...');
+
+        // Geocode and initialize map
+        let coords = null;
+        try {
+            const geo = await geocodePlace(place);
+            if (geo) {
+                coords = { lat: geo.lat, lon: geo.lon, name: geo.display_name };
+                initMap(coords.lat, coords.lon);
+            } else {
+                console.warn('Geocode did not return coordinates for', place);
+            }
+        } catch (e) {
+            console.warn('Geocode failed', e);
+            // continue — Gemini/sensor fallback will still work
+        }
 
         // Prompt per requirements (also request AI plan, supply risk, and climate factors)
         const prompt = `Give short and clear details about ${place} including:\n- Description\n- Top attractions\n- Best time to visit\n- Food to try\nAlso provide:\n- AI Action Plan: 3 concise action bullets for supply chain or assistance\n- Supply risk: give level (High/Medium/Low) and percentage\n- Climate & Crop Factors: short status for Drought, Flood, Temp Rise, Crop Status\nKeep response structured and short.`;
 
         try {
-            showMessage('Loading...');
-            const text = await queryGemini(prompt);
-            if (!text) throw new Error('Empty response');
+            showMessage('Loading AI and sensor data...');
 
-            const sections = parseSections(text);
+            // Fetch raw external data (if coords available)
+            let weather = null;
+            let nasa = null;
+            let supplyObj = null;
+            if (coords) {
+                try {
+                    weather = await getWeather(coords.lat, coords.lon);
+                } catch (e) { console.warn('Weather fetch failed', e); }
+
+                try {
+                    // last 30 days
+                    const end = new Date();
+                    const start = new Date(end.getTime() - 29 * 24 * 60 * 60 * 1000);
+                    const fmt = d => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+                    const startStr = fmt(start);
+                    const endStr = fmt(end);
+                    nasa = await getNasaPower(coords.lat, coords.lon, startStr, endStr);
+                } catch (e) { console.warn('NASA POWER fetch failed', e); }
+            }
+
+            // Derive supply risk from available sensor data (may be used if AI does not provide a percent)
+            try {
+                supplyObj = computeSupplyRisk({ weather, nasa });
+            } catch (e) { console.warn('computeSupplyRisk failed', e); }
+
+            // Build sensor summary to include for verification
+            let sensorSummary = '';
+            try {
+                if (nasa) {
+                    const parameters = nasa?.properties?.parameter || {};
+                    const prec = parameters.PRECTOT || {};
+                    const t2m = parameters.T2M || {};
+                    const days = Object.keys(prec || {}).length || 0;
+                    const totalPrecip = Object.values(prec || {}).reduce((s,v)=>s+(parseFloat(v)||0),0);
+                    const avgTemp = Object.values(t2m || {}).reduce((s,v)=>s+(parseFloat(v)||0),0) / Math.max(1,Object.values(t2m||{}).length || 1);
+                    const heavy = Object.values(prec||{}).filter(v => parseFloat(v) > 50).length;
+                    sensorSummary = `Sensor summary for ${place}: days=${days}, total_precip_mm=${Math.round(totalPrecip)}, avg_temp_c=${Math.round(avgTemp)}, heavy_precip_days=${heavy}.`;
+                } else if (weather && weather.current) {
+                    sensorSummary = `Weather summary for ${place}: temp_c=${Math.round(weather.current.temp || 0)}, conditions=${(weather.current.weather && weather.current.weather[0]&&weather.current.weather[0].main) || ''}.`;
+                }
+            } catch (e) { console.warn('Failed to build sensor summary', e); }
+
+            // Wait briefly so sensors/APIs settle and to follow your requested pause
+            await new Promise(r => setTimeout(r, 2000));
+
+            // Query Gemini with sensor-augmented verification prompt (if available)
+            let text = '';
+            try {
+                const verifyPrompt = sensorSummary ? `${prompt}\n\nSensorData: ${sensorSummary}\n\nPlease verify the sensor data and adjust any supply-risk percentage or climate statements if needed. Reply in short labeled sections: Description, AI Action Plan, Supply risk, Climate & Crop Factors.` : prompt;
+                text = await queryGemini(verifyPrompt);
+                if (!text) console.warn('No AI text returned; proceeding with sensor-derived sections');
+            } catch (e) {
+                console.warn('QueryGemini failed', e);
+                text = '';
+            }
+
+            const sections = parseSections(text || '');
+
+            // Merge measured numeric values into sections for accuracy (do not let model overwrite raw sensor numbers)
+            try {
+                if (nasa) {
+                    const parameters = nasa?.properties?.parameter || {};
+                    const prec = parameters.PRECTOT || {};
+                    const t2m = parameters.T2M || {};
+                    const days = Object.keys(prec || {}).length || 0;
+                    const totalPrecip = Object.values(prec || {}).reduce((s,v)=>s+(parseFloat(v)||0),0);
+                    const avgTemp = Object.values(t2m || {}).reduce((s,v)=>s+(parseFloat(v)||0),0) / Math.max(1,Object.values(t2m||{}).length || 1);
+                    const droughtText = `Rainfall last ${days} days: ${Math.round(totalPrecip)} mm.`;
+                    const tempText = `Average temperature last ${days} days: ${Math.round(avgTemp)}°C.`;
+                    const existing = sections['Climate & Crop Factors'] || '';
+                    // replace or append measured lines
+                    const newClimate = existing.replace(/Drought:[^\n]*/i, `Drought: ${droughtText}`)
+                                              .replace(/Temp Rise:[^\n]*/i, `Temp Rise: ${tempText}`);
+                    sections['Climate & Crop Factors'] = newClimate.includes('Drought:') || newClimate.includes('Temp Rise:') ? newClimate : `${existing}\nDrought: ${droughtText}\nTemp Rise: ${tempText}`;
+                }
+            } catch (e) { console.warn('Failed to merge measured values', e); }
+
+            // Augment climateMap with measured data
+            if (nasa) {
+                try {
+                    // extract PRECTOT and T2M
+                    const parameters = nasa?.properties?.parameter || {};
+                    const prec = parameters.PRECTOT || {};
+                    const t2m = parameters.T2M || {};
+                    const days = Object.keys(prec || {}).length;
+                    const totalPrecip = Object.values(prec || {}).reduce((s,v)=>s+(parseFloat(v)||0),0);
+                    const avgTemp = Object.values(t2m || {}).reduce((s,v)=>s+(parseFloat(v)||0),0) / Math.max(1, Object.values(t2m||{}).length);
+
+                    // create synthetic Climate & Crop Factors text for better UI mapping
+                    const droughtText = `Rainfall last ${days} days: ${Math.round(totalPrecip)} mm. Estimated deficit vs typical: ${Math.max(0, Math.round((1 - (totalPrecip/100))*100))}%`;
+                    const floodText = (Object.values(prec||{}).some(v=>parseFloat(v) > 50)) ? 'Recent heavy daily rainfall spikes detected; localized flood risk elevated.' : 'No extreme daily rainfall detected.';
+                    const tempText = `Average temperature last ${days} days: ${Math.round(avgTemp)}°C. Recent warming trend may stress crops.`;
+                    const cropText = `${totalPrecip < 60 ? 'Water stress likely' : 'Moisture conditions adequate'}.`;
+
+                    sections['Climate & Crop Factors'] = `Drought: ${droughtText}\nFlood: ${floodText}\nTemp Rise: ${tempText}\nCrop Status: ${cropText}`;
+                } catch (e) { console.warn('Failed to synthesize nasa data', e); }
+            }
+
+            // If the AI didn't provide a numeric supply risk, derive one from sensor data
+            try {
+                if (!sections['Supply risk'] || !/\d{1,3}\s*%/.test(sections['Supply risk'])) {
+                    const sObj = supplyObj || computeSupplyRisk({ weather, nasa });
+                    sections['Supply risk'] = `${sObj.level} (${sObj.pct}) — ${sObj.reason}`;
+                }
+            } catch (e) { console.warn('Failed to derive supply risk', e); }
+
+            // If AI Action Plan is missing or too short, synthesize reasonable defaults from supply level
+            try {
+                const planRaw = (sections['AI Action Plan'] || '').trim();
+                if (!planRaw || planRaw.length < 20) {
+                    const sObj = supplyObj || computeSupplyRisk({ weather, nasa });
+                    const level = (sObj && sObj.level) || 'Unknown';
+                    let actions = [];
+                    if (level === 'High') {
+                        actions = [
+                            'Increase emergency imports and buffer stocks for essential grains.',
+                            'Prioritize irrigation and water-conservation measures locally.',
+                            'Coordinate alternate logistics routes to avoid expected bottlenecks.'
+                        ];
+                    } else if (level === 'Medium') {
+                        actions = [
+                            'Monitor markets and maintain moderate buffer stocks.',
+                            'Enhance monitoring of weather and crop conditions.',
+                            'Strengthen local distribution to critical areas.'
+                        ];
+                    } else if (level === 'Low') {
+                        actions = [
+                            'Maintain normal stock rotations and monitoring.',
+                            'Encourage routine irrigation and pest surveillance.',
+                            'Prepare contingency plans in case of rapid weather changes.'
+                        ];
+                    } else {
+                        actions = [
+                            'Monitor sensor and market data for changes.',
+                            'Collect additional local information to refine recommendations.',
+                            'Prepare basic contingency measures as precaution.'
+                        ];
+                    }
+                    sections['AI Action Plan'] = actions.join('\n');
+                }
+            } catch (e) { console.warn('Failed to synthesize AI Action Plan', e); }
+
+            // Update UI with merged sections
             updateUI(sections, text);
 
             // mark todo step completed for parsing & mapping (best-effort local update)
@@ -531,7 +812,42 @@ if (nextPage) {
         });
     }
 
-    // Run one initial search on load to populate UI (uses mock fallback if API fails)
-    if (searchInput) setTimeout(() => handleSearch(), 400);
+    // Reverse geocode helper (calls server /api/geocode with lat/lon)
+    async function reverseGeocode(lat, lon) {
+        try {
+            const res = await fetch(`/api/geocode?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (e) { console.warn('reverseGeocode failed', e); return null; }
+    }
+
+    // On load: attempt browser geolocation and auto-search. Fallback to a single search using current input value.
+    if (searchInput) {
+        if (navigator.geolocation) {
+            // Try to get a quick location; if it fails, fall back to a normal search
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                try {
+                    const geo = await reverseGeocode(lat, lon);
+                    if (geo && geo.display_name) {
+                        searchInput.value = geo.display_name;
+                    } else {
+                        // show coords if reverse lookup fails
+                        searchInput.value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+                    }
+                } catch (e) { console.warn('reverse geocode attempt failed', e); }
+                // Trigger search after geolocation/resolution
+                handleSearch();
+            }, (err) => {
+                console.warn('Geolocation not available or denied', err);
+                // fallback: run one search using any existing input
+                setTimeout(() => handleSearch(), 400);
+            }, { timeout: 5000, maximumAge: 60 * 1000 });
+        } else {
+            // no geolocation API; perform the normal initial search
+            setTimeout(() => handleSearch(), 400);
+        }
+    }
 
 })();
